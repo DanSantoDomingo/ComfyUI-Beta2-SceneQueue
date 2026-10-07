@@ -14,9 +14,7 @@ class Beta2SceneQueue:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "run_name": ("STRING", {"default": "MyFilm"}),
-            "shared_prompt": ("STRING", {"default": "Preserve each character's appearance from their reference photo. Natural movement, consistent lighting.", "multiline": True}),
-            "scenes": ("STRING", {"default": "[]", "multiline": True}),
+            "scene_plan": ("STRING", {"default": '{\n  "run_name": "MyFilm",\n  "shared_prompt": "",\n  "scenes": []\n}', "multiline": True}),
         }}
 
     RETURN_TYPES = ()
@@ -24,7 +22,7 @@ class Beta2SceneQueue:
     CATEGORY = "Beta2/Scenes"
     DESCRIPTION = "Use Run / Resume Scenes on this node. Keep this workflow open while it queues scenes. Reference names come from Load Image titles beginning with REF:."
 
-    def configure(self, run_name, shared_prompt, scenes):
+    def configure(self, scene_plan):
         return ()
 
 

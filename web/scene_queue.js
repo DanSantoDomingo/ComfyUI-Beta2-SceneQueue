@@ -9,11 +9,16 @@ export function frameCount(seconds) {
     return frames + ((5 - frames % 17 + 17) % 17);
 }
 
-export function parseScenes(text, references) {
-    const scenes = JSON.parse(text);
-    if (!Array.isArray(scenes) || !scenes.length) throw new Error("Add at least one scene to the JSON list.");
-    return scenes.map((scene, index) => {
+export function parseScenePlan(text, references) {
+    const plan = JSON.parse(text);
+    if (!plan || typeof plan !== "object" || Array.isArray(plan)) throw new Error("Scene plan must be a JSON object containing run_name, shared_prompt and scenes.");
+    const run_name = plan.run_name ?? "MyFilm";
+    const shared_prompt = plan.shared_prompt ?? "";
+    if (typeof run_name !== "string" || typeof shared_prompt !== "string") throw new Error("run_name and shared_prompt must be text.");
+    if (!Array.isArray(plan.scenes) || !plan.scenes.length) throw new Error("Add at least one scene to the scenes list.");
+    const scenes = plan.scenes.map((scene, index) => {
         const label = `Scene ${index + 1}`;
+        if (!scene || typeof scene !== "object" || Array.isArray(scene)) throw new Error(`${label} must be a JSON object.`);
         if (typeof scene.prompt !== "string" || !scene.prompt.trim()) throw new Error(`${label} needs a prompt.`);
         if (!Number.isFinite(scene.seconds) || scene.seconds <= 0) throw new Error(`${label} needs a positive seconds value.`);
         if (!Array.isArray(scene.references) || !scene.references.every(name => typeof name === "string" && references[name])) {
@@ -30,6 +35,7 @@ export function parseScenes(text, references) {
         const seed = scene.seed ?? crypto.getRandomValues(new Uint32Array(1))[0];
         return { ...scene, seed, frames: frameCount(scene.seconds) };
     });
+    return { run_name, shared_prompt, scenes };
 }
 
 function outputPath(file) {
@@ -138,10 +144,10 @@ async function newRun(node) {
         if (references[name]) throw new Error(`Duplicate reference name: ${name}`);
         references[name] = String(item.id);
     }
-    const widget = name => node.widgets.find(w => w.name === name).value;
-    const scenes = parseScenes(widget("scenes"), references);
-    const shared = widget("shared_prompt");
-    const name = widget("run_name").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 60) || "MyFilm";
+    const plan = parseScenePlan(node.widgets.find(w => w.name === "scene_plan").value, references);
+    const scenes = plan.scenes;
+    const shared = plan.shared_prompt;
+    const name = plan.run_name.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 60) || "MyFilm";
     const run = { snapshot, references, scenes, shared, targets: structuredClone(node.properties.targets),
         prefix: `H3/Scenes/${name}_${Date.now()}`, results: [], pending: null, joined: null };
     for (let index = 0; index < scenes.length; index++) {
@@ -224,6 +230,15 @@ export async function runScenes(node, reset) {
 
 app.registerExtension({
     name: "Beta2.SceneQueue",
+    async setup() {
+        const queuePrompt = app.queuePrompt;
+        app.queuePrompt = async function (...args) {
+            const controller = this.graph._nodes.find(node => node.type === "Beta2SceneQueue" && node.mode === 0);
+            if (!controller) return queuePrompt.apply(this, args);
+            void runScenes(controller, false);
+            return true;
+        };
+    },
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== "Beta2SceneQueue") return;
         const original = nodeType.prototype.onNodeCreated;
@@ -251,7 +266,7 @@ app.registerExtension({
                 link.click();
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
             }, { serialize: false });
-            this.sceneStatus = this.addWidget("text", "status", "Ready. Use Run / Resume Scenes here, not the main Queue button.", () => {}, { serialize: false });
+            this.sceneStatus = this.addWidget("text", "status", "Ready. Run starts or resumes the scene plan. New Run applies edits.", () => {}, { serialize: false });
             this.setSize([700, 780]);
         };
     },
